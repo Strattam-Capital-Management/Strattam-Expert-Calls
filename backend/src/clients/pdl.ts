@@ -74,7 +74,17 @@ export async function pdlPersonSearch(
     }
 
     if (!res.ok) {
-      console.error(`[pdl] HTTP ${res.status} for person search`);
+      // Log the response body too, not just the status - PDL's 400/401/403 bodies name the
+      // exact problem (bad query clause, invalid key, plan doesn't include this endpoint, etc.)
+      // and without this, a real PDL rejection was indistinguishable in the logs from "0 matches
+      // found," which made this exact failure mode impossible to diagnose remotely.
+      let bodyText = '';
+      try {
+        bodyText = await res.text();
+      } catch {
+        // best-effort
+      }
+      console.error(`[pdl] HTTP ${res.status} for person search - body: ${bodyText.slice(0, 1000)}`);
       return { success: false, data: [], total: 0 };
     }
 

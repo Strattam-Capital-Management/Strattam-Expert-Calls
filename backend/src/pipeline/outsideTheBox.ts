@@ -2,15 +2,12 @@ import * as crypto from 'crypto';
 import { firecrawlSearch } from '../clients/firecrawl';
 import { callClaude, extractJson } from '../clients/anthropic';
 import { WEB_CANDIDATE_EXTRACTION_SYSTEM_PROMPT } from '../prompts/webExtraction';
+import { buildTargetAliasSet, matchesAlias } from '../util/companyName';
 import type { Bucket, CandidateDraft, CompanyProfile, RelationshipToTarget } from '../types';
 import type { CostTracker } from '../costTracker';
 
 function newId(): string {
   return crypto.randomUUID();
-}
-
-function norm(s?: string): string {
-  return (s ?? '').trim().toLowerCase();
 }
 
 const OUTSIDE_THE_BOX_QUERY_TEMPLATES = (industry: string) => [
@@ -78,26 +75,61 @@ system prompt. Return JSON only.`;
     }
 
     const people: any[] = parsed.people ?? [];
-    const targetNorm = norm(companyName);
+    // Fuzzy target-company match (see util/companyName.ts) - a plain string comparison here
+    // previously let a current CEO/President of the target slip through as an unrelated
+    // "other" candidate whenever the source text used a different legal form of the company's
+    // name (e.g. "Floor & Decor" vs. "Floor & Decor Holdings, Inc."), because the exact-string
+    // comparison simply never matched and the compliance filter had nothing to catch.
+    const targetAliases = buildTargetAliasSet(companyName, profile.companyName, companyHint);
 
     for (const person of people) {
       if (!person.name || !person.company || !person.title) continue;
       const status: 'current' | 'former' | 'unknown' = person.employmentStatus ?? 'unknown';
-      const companyNorm = norm(person.company);
+      const isTarget = matchesAlias(person.company, targetAliases);
 
       // Same compliance safety net as peopleSearch.ts: never include an ambiguous current/
       // former case where the company is the target itself.
-      if (companyNorm === targetNorm && status === 'unknown') continue;
+      if (isTarget && status === 'unknown') continue;
 
-      const relationshipToTarget: RelationshipToTarget = companyNorm === targetNorm ? 'former_employee' : 'other';
+      let relationshipToTarget: RelationshipToTarget;
+      let currentCompany: string | undefined;
+      let currentTitle: string | undefined;
+      let formerCompany: string | undefined;
+      let formerTitle: string | undefined;
+
+      if (isTarget) {
+        if (status === 'current') {
+          // Deliberately relationshipToTarget: 'other', NOT 'former_employee' - this person is
+          // currently at the target. Setting currentCompany here (not formerCompany) is what
+          // lets compliance.ts's hard-remove check actually catch them; getting this backwards
+          // was the bug that let sitting executives of the target through as if they were
+          // unrelated "other" candidates.
+          relationshipToTarget = 'other';
+          currentCompany = person.company;
+          currentTitle = person.title;
+        } else {
+          relationshipToTarget = 'former_employee';
+          formerCompany = person.company;
+          formerTitle = person.title;
+        }
+      } else {
+        relationshipToTarget = 'other';
+        if (status === 'current') {
+          currentCompany = person.company;
+          currentTitle = person.title;
+        } else {
+          formerCompany = person.company;
+          formerTitle = person.title;
+        }
+      }
 
       drafts.push({
         id: newId(),
         name: person.name,
-        currentCompany: status === 'current' ? person.company : undefined,
-        currentTitle: status === 'current' ? person.title : undefined,
-        formerCompany: status === 'former' ? person.company : undefined,
-        formerTitle: status === 'former' ? person.title : undefined,
+        currentCompany,
+        currentTitle,
+        formerCompany,
+        formerTitle,
         relevantRole: person.role || person.title,
         relationshipToTarget,
         expertiseBucketId: fallbackBucketId,

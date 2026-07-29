@@ -82,7 +82,8 @@ async function runPipeline(params: RunPipelineParams): Promise<void> {
     const { survivors, hardRemovedCount, flaggedCompetitorCount } = applyComplianceFilter(
       allDrafts,
       companyName,
-      profile
+      profile,
+      companyHint
     );
 
     updateRunStage(runId, 'scoring_candidates');

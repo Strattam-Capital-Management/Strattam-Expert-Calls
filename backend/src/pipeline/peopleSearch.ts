@@ -5,6 +5,7 @@ import { GrataExecutiveContact } from '../clients/grata';
 import { callClaude, extractJson } from '../clients/anthropic';
 import { WEB_CANDIDATE_EXTRACTION_SYSTEM_PROMPT } from '../prompts/webExtraction';
 import { createLimiter } from '../util/limit';
+import { buildAliasSet, buildTargetAliasSet, matchesAlias, isSameCompany } from '../util/companyName';
 import { CONFIG } from '../config';
 import type { Archetype, Bucket, CandidateDraft, CompanyProfile, RelationshipToTarget } from '../types';
 import type { CostTracker } from '../costTracker';
@@ -66,26 +67,30 @@ interface RelationshipClassification {
 function classifyFromPdlPerson(
   person: PdlPerson,
   companyName: string,
+  companyHint: string | undefined,
+  researchedCompanyName: string | undefined,
   competitors: string[],
   suppliers: string[],
   customers: string[]
 ): RelationshipClassification {
-  const targetNorm = norm(companyName);
-  const competitorNorms = new Set(competitors.map(norm));
-  const supplierNorms = new Set(suppliers.map(norm));
-  const customerNorms = new Set(customers.map(norm));
+  // Fuzzy matching (see util/companyName.ts) - PDL job_company_name / experience.company.name
+  // strings often carry legal suffixes ("Floor & Decor Holdings, Inc.") that a plain string
+  // comparison against whatever the user typed ("Floor & Decor") would miss entirely.
+  const targetAliases = buildTargetAliasSet(companyName, researchedCompanyName, companyHint);
+  const competitorAliases = buildAliasSet(competitors);
+  const supplierAliases = buildAliasSet(suppliers);
+  const customerAliases = buildAliasSet(customers);
 
   const currentCompany = person.job_company_name;
   const currentTitle = person.job_title;
-  const currentCompanyNorm = norm(currentCompany);
+  const isCurrentTarget = matchesAlias(currentCompany, targetAliases);
   const experience = person.experience ?? [];
 
-  const findPastMatch = (norms: Set<string>) =>
+  const findPastMatch = (aliases: Set<string>) =>
     experience.find((e) => {
-      const cNorm = norm(e.company?.name);
-      if (!cNorm || !norms.has(cNorm)) return false;
+      if (!matchesAlias(e.company?.name, aliases)) return false;
       // Treat as "past" if it has an end_date, or simply isn't the person's current company.
-      return Boolean(e.end_date) || cNorm !== currentCompanyNorm;
+      return Boolean(e.end_date) || !isSameCompany(e.company?.name, currentCompany);
     });
 
   const tenureNoteFor = (e: NonNullable<PdlPerson['experience']>[number], company: string): string => {
@@ -95,8 +100,8 @@ function classifyFromPdlPerson(
   };
 
   // 1. Former employee of the target - highest-value relationship.
-  const targetMatch = experience.find((e) => norm(e.company?.name) === targetNorm);
-  if (targetMatch && !(currentCompanyNorm === targetNorm)) {
+  const targetMatch = experience.find((e) => matchesAlias(e.company?.name, targetAliases));
+  if (targetMatch && !isCurrentTarget) {
     return {
       relationshipToTarget: 'former_employee',
       currentCompany,
@@ -108,18 +113,19 @@ function classifyFromPdlPerson(
   }
 
   // 2. Current employee of the target - the compliance filter hard-removes these downstream
-  //    by comparing currentCompany directly, but we still classify honestly here.
-  if (currentCompanyNorm === targetNorm) {
+  //    by comparing currentCompany directly (same fuzzy match), but we still classify honestly
+  //    here too, and critically still populate currentCompany so that hard-remove can happen.
+  if (isCurrentTarget) {
     return { relationshipToTarget: 'other', currentCompany, currentTitle };
   }
 
   // 3. Current employee of a named competitor.
-  if (currentCompanyNorm && competitorNorms.has(currentCompanyNorm)) {
+  if (matchesAlias(currentCompany, competitorAliases)) {
     return { relationshipToTarget: 'current_competitor_employee', currentCompany, currentTitle };
   }
 
   // 4. Former employee of a named competitor.
-  const competitorMatch = findPastMatch(competitorNorms);
+  const competitorMatch = findPastMatch(competitorAliases);
   if (competitorMatch) {
     return {
       relationshipToTarget: 'former_competitor_employee',
@@ -133,10 +139,7 @@ function classifyFromPdlPerson(
 
   // 5. Supplier relationship - contract enum only has "former_supplier" (no "current"), so any
   //    supplier match is reported as former_supplier regardless of current/past.
-  const supplierMatch =
-    experience.find((e) => supplierNorms.has(norm(e.company?.name))) ??
-    (currentCompanyNorm && supplierNorms.has(currentCompanyNorm) ? experience[0] : undefined);
-  if (currentCompanyNorm && supplierNorms.has(currentCompanyNorm)) {
+  if (matchesAlias(currentCompany, supplierAliases)) {
     return {
       relationshipToTarget: 'former_supplier',
       currentCompany,
@@ -146,6 +149,7 @@ function classifyFromPdlPerson(
       tenureNote: 'Currently at a named supplier - verify current vs. former relationship before outreach.',
     };
   }
+  const supplierMatch = findPastMatch(supplierAliases);
   if (supplierMatch) {
     return {
       relationshipToTarget: 'former_supplier',
@@ -158,10 +162,10 @@ function classifyFromPdlPerson(
   }
 
   // 6. Customer relationship.
-  if (currentCompanyNorm && customerNorms.has(currentCompanyNorm)) {
+  if (matchesAlias(currentCompany, customerAliases)) {
     return { relationshipToTarget: 'current_customer', currentCompany, currentTitle };
   }
-  const customerMatch = findPastMatch(customerNorms);
+  const customerMatch = findPastMatch(customerAliases);
   if (customerMatch) {
     return {
       relationshipToTarget: 'former_customer',
@@ -179,6 +183,7 @@ function classifyFromPdlPerson(
 async function searchPdlForArchetype(
   archetype: Archetype,
   companyName: string,
+  companyHint: string | undefined,
   profile: CompanyProfile,
   costTracker: CostTracker
 ): Promise<CandidateDraft[]> {
@@ -197,6 +202,8 @@ async function searchPdlForArchetype(
       const classification = classifyFromPdlPerson(
         p,
         companyName,
+        companyHint,
+        profile.companyName,
         profile.competitors,
         profile.suppliers,
         profile.customers
@@ -263,23 +270,29 @@ prompt. Return JSON only.`;
   const parsed = extractJson(result.text);
   const people: any[] = parsed.people ?? [];
 
-  const competitorNorms = new Set(profile.competitors.map(norm));
-  const supplierNorms = new Set(profile.suppliers.map(norm));
-  const customerNorms = new Set(profile.customers.map(norm));
-  const targetNorm = norm(companyName);
+  // Fuzzy matching (see util/companyName.ts) - a plain string comparison here previously let a
+  // current employee of the target slip through as an unrelated "other" candidate whenever the
+  // source text used a different legal form of the company's name than what the user typed
+  // (e.g. "Floor & Decor" vs. "Floor & Decor Holdings, Inc."). The target alias set also
+  // includes the company name Claude's research step settled on, since that may be the fuller/
+  // legal name even when the user typed a shorter colloquial one.
+  const competitorAliases = buildAliasSet(profile.competitors);
+  const supplierAliases = buildAliasSet(profile.suppliers);
+  const customerAliases = buildAliasSet(profile.customers);
+  const targetAliases = buildTargetAliasSet(companyName, profile.companyName, companyHint);
 
   const drafts: CandidateDraft[] = [];
 
   for (const person of people) {
     if (!person.name || !person.company || !person.title) continue;
-    const companyNorm = norm(person.company);
+    const isTarget = matchesAlias(person.company, targetAliases);
     const status: 'current' | 'former' | 'unknown' = person.employmentStatus ?? 'unknown';
 
     // Compliance safety: if this person's company is the TARGET and we cannot confirm
     // (from the source text) whether they're current or former, we cannot safely include
     // them - a current employee/board member of the target must never appear in output, and
     // we refuse to guess. Skip rather than risk a compliance miss.
-    if (companyNorm === targetNorm && status === 'unknown') {
+    if (isTarget && status === 'unknown') {
       console.warn(
         `[peopleSearch] dropping "${person.name}" - ambiguous current/former status at target company, cannot safely include`
       );
@@ -293,12 +306,23 @@ prompt. Return JSON only.`;
     let formerTitle: string | undefined;
     let complianceNotes: string | undefined;
 
-    if (companyNorm === targetNorm) {
-      // status === 'former' at this point (unknown+target already skipped above).
-      relationshipToTarget = 'former_employee';
-      formerCompany = person.company;
-      formerTitle = person.title;
-    } else if (competitorNorms.has(companyNorm)) {
+    if (isTarget) {
+      if (status === 'current') {
+        // Deliberately relationshipToTarget: 'other', NOT 'former_employee' - and critically,
+        // currentCompany (not formerCompany) must be set here, since that's the field
+        // compliance.ts checks to hard-remove sitting employees/board members of the target.
+        // Getting this backwards was the bug that let current executives of the target through
+        // as if they were unrelated "other" candidates.
+        relationshipToTarget = 'other';
+        currentCompany = person.company;
+        currentTitle = person.title;
+      } else {
+        // status === 'former' (unknown+target already skipped above).
+        relationshipToTarget = 'former_employee';
+        formerCompany = person.company;
+        formerTitle = person.title;
+      }
+    } else if (matchesAlias(person.company, competitorAliases)) {
       if (status === 'current') {
         relationshipToTarget = 'current_competitor_employee';
         currentCompany = person.company;
@@ -313,7 +337,7 @@ prompt. Return JSON only.`;
         currentTitle = person.title;
         complianceNotes = 'Employment status (current vs. former) at a named competitor could not be confirmed from source text - verify before outreach.';
       }
-    } else if (supplierNorms.has(companyNorm)) {
+    } else if (matchesAlias(person.company, supplierAliases)) {
       relationshipToTarget = 'former_supplier';
       if (status === 'current') {
         currentCompany = person.company;
@@ -322,7 +346,7 @@ prompt. Return JSON only.`;
         formerCompany = person.company;
         formerTitle = person.title;
       }
-    } else if (customerNorms.has(companyNorm)) {
+    } else if (matchesAlias(person.company, customerAliases)) {
       relationshipToTarget = status === 'current' ? 'current_customer' : 'former_customer';
       if (status === 'current') {
         currentCompany = person.company;
@@ -474,7 +498,7 @@ export async function sourceCandidates(
 
   const pdlResults = await Promise.all(
     archetypes.map((archetype) =>
-      limit(() => searchPdlForArchetype(archetype, companyName, profile, costTracker))
+      limit(() => searchPdlForArchetype(archetype, companyName, companyHint, profile, costTracker))
     )
   );
 
