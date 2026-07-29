@@ -1,0 +1,31 @@
+DO NOT USE THIS. NOT IMPORTED ANYWHERE. NOT EXECUTABLE (.ts.txt, excluded from tsconfig).
+
+This file exists purely as a documented reason why the Expert Interview Sourcing Tool does
+NOT scrape LinkedIn and does NOT integrate Proxycurl (or any similar "LinkedIn data API"
+reseller) as a real candidate people-search provider.
+
+Background: Proxycurl was a third-party API that scraped LinkedIn profile data and resold
+structured access to it. LinkedIn (Microsoft) sued Proxycurl in the Northern District of
+California in January 2025 for, among other things, violating LinkedIn's User Agreement,
+unfair competition, and unauthorized scraping/access under the CFAA. Proxycurl shut down
+permanently in July 2025 as a result of that litigation. Any tool built on top of it (or a
+similar successor scraper) inherits the same legal exposure: it is built on data obtained in
+violation of LinkedIn's terms of service, and the company providing it can disappear
+overnight (as Proxycurl did), taking the integration down with it.
+
+For this tool, "real people search" is implemented via two sources that don't carry that
+risk:
+  1. People Data Labs (src/clients/pdl.ts) - a licensed data aggregator with its own direct
+     data-collection agreements and compliance program, queried via its own documented API
+     (not a LinkedIn scraper).
+  2. Firecrawl web search + Claude extraction (src/pipeline/peopleSearch.ts) - ordinary public
+     web search (press releases, executive bios, SEC filings, conference programs), which is
+     public information indexed by search engines, not a scrape of a specific platform's
+     private/authenticated data behind its terms of service.
+
+If a future engineer is tempted to add a "grab LinkedIn profile data" integration to speed up
+candidate sourcing, read this file first and loop in legal/compliance before doing so - the
+outcome for the last company that tried it was a lawsuit and a shutdown.
+
+(This file is intentionally not valid TypeScript and is excluded from the build via
+tsconfig.json's "exclude" list, and via its .ts.txt extension which no import path can resolve.)

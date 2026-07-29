@@ -1,0 +1,12 @@
+# Belt-and-suspenders root .gitignore - backend/ and frontend/ each have their own too.
+node_modules/
+dist/
+.next/
+.env
+.env.local
+.env.*.local
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.DS_Store
