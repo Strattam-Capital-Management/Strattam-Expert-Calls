@@ -25,10 +25,24 @@ export interface ExpertiseBucket {
   rationale: string;
 }
 
+export type ArchetypeCategory =
+  | "target_employee"
+  | "competitor_employee"
+  | "customer"
+  | "channel_partner"
+  | "supplier"
+  | "industry_analyst"
+  | "academic"
+  | "consultant"
+  | "trade_association"
+  | "conference_speaker"
+  | "product_reviewer";
+
 export interface CandidateArchetype {
   bucketId: string;
   title: string;
   whyValuable: string;
+  category: ArchetypeCategory;
 }
 
 export interface DiligenceQuestion {
@@ -44,6 +58,13 @@ export type RelationshipToTarget =
   | "former_supplier"
   | "current_customer"
   | "former_customer"
+  | "channel_partner"
+  | "industry_analyst"
+  | "academic"
+  | "consultant"
+  | "trade_association_exec"
+  | "conference_speaker"
+  | "product_reviewer"
   | "other";
 
 export type Tier = "Tier 1" | "Tier 2" | "Tier 3";

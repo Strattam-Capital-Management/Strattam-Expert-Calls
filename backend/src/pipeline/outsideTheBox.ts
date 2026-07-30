@@ -3,22 +3,30 @@ import { firecrawlSearch } from '../clients/firecrawl';
 import { callClaude, extractJson } from '../clients/anthropic';
 import { WEB_CANDIDATE_EXTRACTION_SYSTEM_PROMPT } from '../prompts/webExtraction';
 import { buildTargetAliasSet, matchesAlias } from '../util/companyName';
-import type { Bucket, CandidateDraft, CompanyProfile, RelationshipToTarget } from '../types';
+import { relationshipForUnaffiliatedCategory } from './categoryQueries';
+import type { ArchetypeCategory, Bucket, CandidateDraft, CompanyProfile, RelationshipToTarget } from '../types';
 import type { CostTracker } from '../costTracker';
 
 function newId(): string {
   return crypto.randomUUID();
 }
 
-const OUTSIDE_THE_BOX_QUERY_TEMPLATES = (industry: string) => [
-  `independent consultant ${industry} industry advisory named expert`,
-  `trade association executive director ${industry} named`,
-  `industry analyst covering ${industry} named report author`,
+// NOTE: consultant/trade_association/industry_analyst are now also first-class archetype
+// categories generated per-company in buckets.ts (see prompts/bucketsArchetypes.ts), with
+// tailored queries in categoryQueries.ts. This module is a supplementary, fixed-template sweep
+// that runs regardless of what the archetype-generation step happened to propose for THIS
+// company - a safety net for the case where Claude's archetype list under-indexed on one of
+// these categories. Overlap with the archetype-driven results is expected and harmless -
+// dedupeCandidates() in peopleSearch.ts's sourceCandidates() collapses duplicates by name+company.
+const OUTSIDE_THE_BOX_QUERY_TEMPLATES: Array<{ category: ArchetypeCategory; buildQuery: (industry: string) => string }> = [
+  { category: 'consultant', buildQuery: (industry) => `independent consultant ${industry} industry advisory named expert` },
+  { category: 'trade_association', buildQuery: (industry) => `trade association executive director ${industry} named` },
+  { category: 'industry_analyst', buildQuery: (industry) => `industry analyst covering ${industry} named report author` },
 ];
 
 /**
- * Stage 12 of the pipeline. Supplementary searches for adjacent expert types the archetype
- * logic wouldn't naturally surface: independent industry consultants, trade-association
+ * Stage 12 of the pipeline. Supplementary searches for adjacent expert types that a given run's
+ * archetype list might have under-covered: independent industry consultants, trade-association
  * executives, and industry analysts. These are marked outsideTheBox: true and go through the
  * same compliance/scoring/mapping/tiering stages as every other candidate.
  */
@@ -36,7 +44,8 @@ export async function findOutsideTheBoxCandidates(
 
   const drafts: CandidateDraft[] = [];
 
-  for (const query of OUTSIDE_THE_BOX_QUERY_TEMPLATES(industry)) {
+  for (const template of OUTSIDE_THE_BOX_QUERY_TEMPLATES) {
+    const query = template.buildQuery(industry);
     const searchResult = await firecrawlSearch({ query: `${query} ${companyName}${hintSuffix}`, limit: 8, costTracker });
     if (!searchResult.success || searchResult.results.length === 0) continue;
 
@@ -99,11 +108,10 @@ system prompt. Return JSON only.`;
 
       if (isTarget) {
         if (status === 'current') {
-          // Deliberately relationshipToTarget: 'other', NOT 'former_employee' - this person is
-          // currently at the target. Setting currentCompany here (not formerCompany) is what
-          // lets compliance.ts's hard-remove check actually catch them; getting this backwards
-          // was the bug that let sitting executives of the target through as if they were
-          // unrelated "other" candidates.
+          // Deliberately NOT 'former_employee' - this person is currently at the target.
+          // Setting currentCompany here (not formerCompany) is what lets compliance.ts's
+          // hard-remove check actually catch them; getting this backwards was the bug that let
+          // sitting executives of the target through as if they were unrelated candidates.
           relationshipToTarget = 'other';
           currentCompany = person.company;
           currentTitle = person.title;
@@ -113,7 +121,10 @@ system prompt. Return JSON only.`;
           formerTitle = person.title;
         }
       } else {
-        relationshipToTarget = 'other';
+        // Not the target - tag with what this template was actually looking for (consultant/
+        // trade_association_exec/industry_analyst) instead of the generic 'other' every one of
+        // these candidates used to get lumped into.
+        relationshipToTarget = relationshipForUnaffiliatedCategory(template.category);
         if (status === 'current') {
           currentCompany = person.company;
           currentTitle = person.title;

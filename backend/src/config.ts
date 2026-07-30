@@ -33,6 +33,13 @@ export const CONFIG = {
   // written with confidence. Keeping the key here so it's a one-file change (clients/raylu.ts)
   // once that contract is confirmed, rather than a design change.
   rayluApiKey: process.env.RAYLU_API_KEY ?? '',
+  // Google Custom Search: an optional second web-search backend alongside Firecrawl, used
+  // mainly for `site:`-scoped queries (g2.com, capterra.com, gartner.com, .edu, linkedin.com/in
+  // search-result snippets - never scraped page content) that surface the newer, non-employee
+  // archetype categories (industry analysts, academics, product reviewers, etc). See
+  // clients/googleCse.ts. No-op if unset.
+  googleCseApiKey: process.env.GOOGLE_CSE_API_KEY ?? '',
+  googleCseCx: process.env.GOOGLE_CSE_CX ?? '',
   accessCode: process.env.ACCESS_CODE ?? '',
   dbPath: process.env.DB_PATH ?? path.join(process.cwd(), 'data', 'sourcer.db'),
   cacheTtlDays: envInt('CACHE_TTL_DAYS', 30),
@@ -51,4 +58,8 @@ export const CONFIG = {
   // Firecrawl - this constant is a rough per-call estimate for the cost breakdown's sake only.
   // Check it against the firm's actual Grata contract before trusting it for budgeting.
   grataCostPerCallUsd: envFloat('GRATA_COST_PER_CALL_USD', 0.05),
+  // Google's published rate above the free 100 queries/day tier is roughly $5 per 1,000 queries
+  // ($0.005/query) as of this writing - same "estimate constant, verify before budgeting" caveat
+  // as the others above.
+  googleCseCostPerCallUsd: envFloat('GOOGLE_CSE_COST_PER_CALL_USD', 0.005),
 };

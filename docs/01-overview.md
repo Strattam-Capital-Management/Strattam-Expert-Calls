@@ -16,13 +16,13 @@ It exists to make expert-network-style sourcing faster and cheaper than a GLG-st
 
 1. **Company research** — Firecrawl searches (and selectively scrapes) the company's site, press, filings, and bios; Claude synthesizes a structured company profile (business model, revenue drivers, cost structure, customers, channels, geography, competitors, suppliers, regulatory considerations, tech stack, value drivers) with a citation for every claim. Cached for 30 days (configurable) so re-running the same company doesn't re-spend Firecrawl credits.
 2. **Dynamic expertise buckets** — Claude proposes 6–8 expertise areas tailored to *this* company's actual value drivers, not a generic fixed list.
-3. **Candidate archetypes** — for each bucket, Claude names 1–2 specific job titles most likely to hold high-value non-public information, favoring former employees of the target/competitors/suppliers/customers over generic commentators.
-4. **Real people search** — up to three independent sources, so one failing doesn't blank the run:
-   - **People Data Labs** — a licensed person-search API, queried by title + company.
-   - **Public web research** — Firecrawl search over press releases, executive bios, SEC filings, and conference speaker programs, with a Claude pass that extracts only explicitly-named individuals and their *stated* current/former company and title (it never guesses employment status — ambiguous cases are marked unknown, which matters for step 5).
+3. **Candidate archetypes** — for each bucket, Claude names 2–3 specific job titles, each tagged with a *category* (`target_employee`, `competitor_employee`, `customer`, `channel_partner`, `supplier`, `industry_analyst`, `academic`, `consultant`, `trade_association`, `conference_speaker`, `product_reviewer` — see `backend/src/types.ts`). The prompt explicitly requires spreading archetypes across at least 5 of these categories per run, so the list reaches well beyond just the target's own former employees — toward the breadth of a professional expert network (GLG/AlphaSights-style), not just an alumni list.
+4. **Real people search** — each archetype's *category* determines which sources and query templates run for it (see `backend/src/pipeline/categoryQueries.ts`):
+   - **People Data Labs** — a licensed person-search API, queried by title + company. Only used for the four categories where "did this person ever work at a named company" is the right question (`target_employee`, `competitor_employee`, `customer`, `supplier`) — it has nothing to query against for an analyst, academic, or conference speaker, so it's skipped for those to avoid wasting API calls.
+   - **Public web research (Firecrawl + Google Custom Search)** — Firecrawl search over press releases, executive bios, SEC filings, and conference speaker programs, plus Google CSE for `site:`-scoped queries (g2.com/capterra.com/trustradius.com for product reviewers, gartner.com/forrester.com/idc.com for industry analysts, `.edu` for academics, linkedin.com/in search-result *snippets* — never scraped page content — for everything else) when `GOOGLE_CSE_API_KEY`/`GOOGLE_CSE_CX` are set. A Claude pass extracts only explicitly-named individuals and their *stated* current/former company and title (it never guesses employment status — ambiguous cases are marked unknown, which matters for step 5).
    - **Grata** (optional, only if `GRATA_API_KEY` is set) — verified executive/board contact data for the target company itself, if the account's Grata plan includes the Data Warehouse module. Grata is also used earlier, in company research, to ground the competitor/similar-company list in structured data rather than LLM inference alone.
    - LinkedIn is never scraped. Proxycurl is not used (LinkedIn sued Proxycurl for this in January 2025; it shut down permanently in July 2025).
-   - **Raylu** is a reserved-but-not-yet-wired fourth source — see `backend/src/clients/raylu.ts` for why (their public docs don't expose a versioned API reference to build against yet).
+   - **Raylu** is a reserved-but-not-yet-wired source — see `backend/src/clients/raylu.ts` for why (their public docs don't expose a versioned API reference to build against yet).
 5. **Compliance filter** — anyone currently employed by or on the board of the target company is hard-removed and never shown. Current employees of named competitors are flagged, not removed, for human compliance review.
 6. **Scoring** — each surviving candidate gets a 0–100 score from relationship strength to the target, functional relevance/seniority, recency of the relevant tenure, and public thought-leadership signal.
 7. **Question mapping** — each candidate is mapped to the diligence questions (user-supplied, or a standard 8-question commercial-DD framework if none given) they're best positioned to answer.
@@ -30,7 +30,7 @@ It exists to make expert-network-style sourcing faster and cheaper than a GLG-st
 9. **Bucket grouping** — the final list is organized by expertise bucket.
 10. **Final table** — name, current/former company & title, relationship to target, bucket, tier, best-fit questions, reason for inclusion, source/LinkedIn citation, confidence score, compliance notes.
 11. **Coverage score** — an overall 0–100 score plus bucket-by-bucket coverage, with concrete gaps flagged (e.g. "no sourcing expert identified") rather than force-filling a bucket with a weak candidate.
-12. **Outside-the-box experts** — a supplementary search for adjacent expert types the archetype logic wouldn't naturally surface: industry consultants, trade-association executives, industry analysts.
+12. **Outside-the-box experts** — a fixed, always-runs supplementary sweep for consultants/trade-association execs/industry analysts, as a safety net in case a given run's archetype list under-covered one of those categories despite step 3's breadth requirement. Overlap with archetype-driven results is expected and deduplicated.
 13. **Export** — the full result downloads as Excel (Candidates, Company Profile, Coverage, Run Info sheets).
 
 ## The moving parts
@@ -43,6 +43,7 @@ It exists to make expert-network-style sourcing faster and cheaper than a GLG-st
 | **Claude (Anthropic API)** | Research synthesis, bucket/archetype generation, candidate extraction, scoring, question mapping. Pay-per-use; cost is tracked exactly from real token usage. |
 | **Firecrawl** | Company research and public-web candidate search. Pay-per-use; cost is estimated (exact per-call rate isn't in the response). |
 | **People Data Labs** | Licensed structured person search. Billed per record returned; cost is estimated against a configurable per-record rate — check it against the firm's actual PDL plan. |
+| **Google Custom Search** (optional) | Second web-search backend for `site:`-scoped queries (review sites, analyst sites, `.edu`, LinkedIn search-result snippets). Pay-per-use above a 100/day free tier; cost is estimated. No-op if `GOOGLE_CSE_API_KEY`/`GOOGLE_CSE_CX` are unset. |
 | **Cache** | A SQLite file on the backend's disk, storing company-profile cache and run history. No separate database service. |
 
 ## Architecture at a glance

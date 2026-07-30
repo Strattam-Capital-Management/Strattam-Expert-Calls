@@ -24,6 +24,7 @@ export class CostTracker {
   private firecrawlCalls = 0;
   private pdlRecords = 0;
   private grataCalls = 0;
+  private googleCseCalls = 0;
 
   addClaude(model: string, inputTokens: number, outputTokens: number): void {
     this.claudeUsage.push({ model, inputTokens, outputTokens });
@@ -39,6 +40,10 @@ export class CostTracker {
 
   addGrataCall(n = 1): void {
     this.grataCalls += n;
+  }
+
+  addGoogleCseCall(n = 1): void {
+    this.googleCseCalls += n;
   }
 
   summarize(): CostSummary {
@@ -91,11 +96,21 @@ export class CostTracker {
       });
     }
 
-    // NOTE: Grata doesn't get its own named top-level field (unlike claudeUsd/firecrawlUsd/
-    // pdlUsd) to avoid a breaking change to the CostSummary shape the frontend already renders -
-    // it only ever reads `breakdown` (itemized) and `totalUsd`, both of which fully reflect
-    // Grata's cost. Same approach should be used for Raylu once that's wired in for real.
-    const totalUsd = claudeUsd + firecrawlUsd + pdlUsd + grataUsd;
+    const googleCseUsd = this.googleCseCalls * CONFIG.googleCseCostPerCallUsd;
+    if (this.googleCseCalls > 0) {
+      breakdown.push({
+        label: `Google Custom Search - ${this.googleCseCalls} query(ies) at an estimated $${CONFIG.googleCseCostPerCallUsd}/query`,
+        usd: round2(googleCseUsd),
+        basis: 'estimated',
+      });
+    }
+
+    // NOTE: Grata and Google CSE don't get their own named top-level fields (unlike
+    // claudeUsd/firecrawlUsd/pdlUsd) to avoid a breaking change to the CostSummary shape the
+    // frontend already renders - it only ever reads `breakdown` (itemized) and `totalUsd`, both
+    // of which fully reflect their cost. Same approach should be used for Raylu once that's
+    // wired in for real.
+    const totalUsd = claudeUsd + firecrawlUsd + pdlUsd + grataUsd + googleCseUsd;
 
     return {
       claudeUsd: round2(claudeUsd),

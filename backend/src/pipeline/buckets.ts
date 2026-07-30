@@ -1,7 +1,32 @@
 import { callClaude, extractJson } from '../clients/anthropic';
 import { BUCKETS_ARCHETYPES_SYSTEM_PROMPT } from '../prompts/bucketsArchetypes';
-import type { CompanyProfile, Bucket, Archetype } from '../types';
+import type { CompanyProfile, Bucket, Archetype, ArchetypeCategory } from '../types';
 import type { CostTracker } from '../costTracker';
+
+const VALID_CATEGORIES = new Set<ArchetypeCategory>([
+  'target_employee',
+  'competitor_employee',
+  'customer',
+  'channel_partner',
+  'supplier',
+  'industry_analyst',
+  'academic',
+  'consultant',
+  'trade_association',
+  'conference_speaker',
+  'product_reviewer',
+]);
+
+/** Falls back to 'target_employee' (the pipeline's original, most-conservative behavior) if
+ * Claude returns a category outside the fixed list - this should be rare given the schema is
+ * spelled out explicitly in the system prompt, but a malformed/missing category should degrade
+ * gracefully rather than crash the run or silently drop the archetype. */
+function normalizeCategory(raw: unknown): ArchetypeCategory {
+  if (typeof raw === 'string' && VALID_CATEGORIES.has(raw as ArchetypeCategory)) {
+    return raw as ArchetypeCategory;
+  }
+  return 'target_employee';
+}
 
 /**
  * Stages 2 + 3 of the pipeline, combined into one Claude call (returns {buckets, archetypes}
@@ -23,9 +48,10 @@ ${JSON.stringify(profile, null, 2)}
 Investment thesis (if provided): ${thesis ?? '(none provided)'}
 
 Propose 6-8 expertise buckets tailored specifically to this company's actual value drivers and
-industry, and for each bucket 1-2 specific candidate archetypes (job titles) most likely to
-hold high-value non-public information. Return JSON only, matching the schema in your system
-prompt.`;
+industry, and for each bucket 2-3 specific candidate archetypes (job titles), each tagged with
+a category per your system prompt. Spread the archetypes across at least 5 different
+categories overall - reach well beyond just the target's own former employees. Return JSON
+only, matching the schema in your system prompt.`;
 
   const result = await callClaude({
     model,
@@ -51,6 +77,7 @@ prompt.`;
       bucketId: a.bucketId,
       title: a.title,
       whyValuable: a.whyValuable ?? '',
+      category: normalizeCategory(a.category),
     }));
 
   return { buckets, archetypes };

@@ -30,10 +30,31 @@ export interface Bucket {
   rationale: string;
 }
 
+// Which pool of people an archetype is meant to surface. This drives which search backends
+// (PDL vs. web/CSE) and which query templates get used for that archetype (see
+// pipeline/categoryQueries.ts) - it exists specifically so the pipeline isn't limited to
+// "former employees of the target/competitors/suppliers/customers" the way it originally was.
+// GLG/AlphaSights-style breadth requires reaching people who never worked at any company in
+// the CompanyProfile at all: industry analysts, academics, independent consultants, trade-
+// association leadership, conference speakers, and named product reviewers.
+export type ArchetypeCategory =
+  | 'target_employee'
+  | 'competitor_employee'
+  | 'customer'
+  | 'channel_partner'
+  | 'supplier'
+  | 'industry_analyst'
+  | 'academic'
+  | 'consultant'
+  | 'trade_association'
+  | 'conference_speaker'
+  | 'product_reviewer';
+
 export interface Archetype {
   bucketId: string;
   title: string;
   whyValuable: string;
+  category: ArchetypeCategory;
 }
 
 export interface DiligenceQuestion {
@@ -49,6 +70,13 @@ export type RelationshipToTarget =
   | 'former_supplier'
   | 'current_customer'
   | 'former_customer'
+  | 'channel_partner'
+  | 'industry_analyst'
+  | 'academic'
+  | 'consultant'
+  | 'trade_association_exec'
+  | 'conference_speaker'
+  | 'product_reviewer'
   | 'other';
 
 export type Tier = 'Tier 1' | 'Tier 2' | 'Tier 3';

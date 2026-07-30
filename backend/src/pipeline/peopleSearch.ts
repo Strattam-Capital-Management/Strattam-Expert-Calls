@@ -1,11 +1,13 @@
 import * as crypto from 'crypto';
 import { pdlPersonSearch, PdlPerson } from '../clients/pdl';
 import { firecrawlSearch } from '../clients/firecrawl';
+import { googleCseSearch } from '../clients/googleCse';
 import { GrataExecutiveContact } from '../clients/grata';
 import { callClaude, extractJson } from '../clients/anthropic';
 import { WEB_CANDIDATE_EXTRACTION_SYSTEM_PROMPT } from '../prompts/webExtraction';
 import { createLimiter } from '../util/limit';
 import { buildAliasSet, buildTargetAliasSet, matchesAlias, isSameCompany } from '../util/companyName';
+import { buildWebQueries, isPdlEligible, relationshipForUnaffiliatedCategory } from './categoryQueries';
 import { CONFIG } from '../config';
 import type { Archetype, Bucket, CandidateDraft, CompanyProfile, RelationshipToTarget } from '../types';
 import type { CostTracker } from '../costTracker';
@@ -237,18 +239,33 @@ async function searchWebForArchetype(
   costTracker: CostTracker
 ): Promise<CandidateDraft[]> {
   const hintSuffix = companyHint ? ` (${companyHint})` : '';
-  const query = `"${archetype.title}" ${companyName}${hintSuffix} named executive OR press release OR conference bio`;
+  const industry = profile.industry || `${companyName}'s industry`;
+  const categoryQueries = buildWebQueries(archetype.category, archetype.title, companyName, hintSuffix, industry);
 
-  const searchResult = await firecrawlSearch({ query, limit: 10, costTracker });
-  if (!searchResult.success || searchResult.results.length === 0) return [];
+  // Each category's query plan (see categoryQueries.ts) says which queries are Firecrawl's
+  // general web search vs. Google CSE's site:-scoped search (analysts on gartner.com,
+  // reviewers on g2.com/capterra.com, academics on .edu, etc). Running both backends across all
+  // of an archetype's queries and merging into one snippet corpus is what actually delivers the
+  // "beyond just former employees" breadth - a single generic query per archetype couldn't
+  // reach these categories at all.
+  const searchCalls = categoryQueries.map((cq) =>
+    cq.useCse
+      ? googleCseSearch(cq.query, { limit: 10, costTracker })
+      : firecrawlSearch({ query: cq.query, limit: 10, costTracker })
+  );
+  const searchResponses = await Promise.all(searchCalls);
 
-  const snippetText = searchResult.results
+  const combinedResults = searchResponses.flatMap((r) => (r.success ? r.results : []));
+  if (combinedResults.length === 0) return [];
+
+  const snippetText = combinedResults
     .map((r) => `URL: ${r.url}\nTITLE: ${r.title ?? ''}\nSNIPPET: ${r.description ?? ''}`)
     .join('\n\n---\n\n')
     .slice(0, 20_000);
 
   const userMessage = `Target company: ${companyName}${hintSuffix}
 Archetype being sourced: "${archetype.title}" (${archetype.whyValuable})
+Archetype category: ${archetype.category}
 Expertise bucket: ${bucket?.name ?? archetype.bucketId}
 
 Web search snippets:
@@ -356,6 +373,14 @@ prompt. Return JSON only.`;
         formerTitle = person.title;
       }
     } else {
+      // Didn't match any named company from the CompanyProfile - for the newer, unaffiliated-
+      // expert archetype categories (industry_analyst/academic/consultant/trade_association/
+      // conference_speaker/product_reviewer/channel_partner), that's actually the EXPECTED case
+      // (a Gartner analyst or a professor was never going to show up in profile.competitors),
+      // so tag them with what they actually are per the archetype category being searched,
+      // rather than collapsing them into the generic 'other' relationship that made this exact
+      // category of candidate hard to distinguish from noise downstream.
+      relationshipToTarget = relationshipForUnaffiliatedCategory(archetype.category);
       if (status === 'current') {
         currentCompany = person.company;
         currentTitle = person.title;
@@ -478,8 +503,10 @@ function dedupeCandidates(candidates: CandidateDraft[]): CandidateDraft[] {
 /**
  * Stage 4 of the pipeline. Runs real people-search sources independently across all archetypes
  * (so any one source failing doesn't blank the run): People Data Labs (throttled to
- * PDL_CONCURRENCY, e.g. 3 at a time), Firecrawl search + Claude extraction of explicitly-named
- * individuals from public press/bios/filings, and - if GRATA_API_KEY is configured and
+ * PDL_CONCURRENCY, e.g. 3 at a time - only for archetype categories where "did this person ever
+ * work at a specific named company" is even the right question, see isPdlEligible in
+ * categoryQueries.ts), Firecrawl + Google CSE search with category-tailored queries and Claude
+ * extraction of explicitly-named individuals, and - if GRATA_API_KEY is configured and
  * `grataExecutives` is non-empty - Grata's verified executive/board contact data for the target
  * company itself (see research.ts and draftsFromGrataExecutives above).
  */
@@ -498,7 +525,9 @@ export async function sourceCandidates(
 
   const pdlResults = await Promise.all(
     archetypes.map((archetype) =>
-      limit(() => searchPdlForArchetype(archetype, companyName, companyHint, profile, costTracker))
+      isPdlEligible(archetype.category)
+        ? limit(() => searchPdlForArchetype(archetype, companyName, companyHint, profile, costTracker))
+        : Promise.resolve([])
     )
   );
 
