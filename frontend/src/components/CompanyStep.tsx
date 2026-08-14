@@ -97,20 +97,39 @@ export default function CompanyStep({
       {candidates.length > 0 && (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {candidates.map((c) => (
-            <button
+            <div
               key={c.domain}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => handleSelect(c)}
-              className={`rounded-lg border p-3 text-left text-sm transition ${
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleSelect(c);
+                }
+              }}
+              className={`cursor-pointer rounded-lg border p-3 text-left text-sm transition ${
                 selectedDomain === c.domain
                   ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
                   : "border-slate-200 hover:border-slate-400"
               }`}
             >
               <div className="font-medium text-slate-900">{c.name}</div>
-              <div className="text-xs text-slate-500">{c.domain}</div>
+              {/* Clickable link to the actual site, so you can eyeball it and confirm this is
+                  really the company you mean before running the full pipeline against it.
+                  stopPropagation keeps the click from also selecting the card - opening the
+                  site and selecting the candidate are two separate actions. */}
+              <a
+                href={c.domain.startsWith("http") ? c.domain : `https://${c.domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-block text-xs text-blue-600 underline hover:text-blue-800"
+              >
+                {c.domain} ↗
+              </a>
               <div className="mt-1 text-xs text-slate-600">{c.oneLiner}</div>
-            </button>
+            </div>
           ))}
         </div>
       )}
