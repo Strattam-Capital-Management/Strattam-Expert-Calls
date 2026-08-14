@@ -68,13 +68,23 @@ export async function firecrawlSearch(opts: FirecrawlSearchOpts): Promise<Firecr
     });
 
     if (!res.ok) {
-      console.error(`[firecrawl] HTTP ${res.status} for query "${query}"`);
+      // Log the response body too, not just the status - same fix as clients/pdl.ts. Without
+      // this, a real Firecrawl rejection (bad/expired key, quota exhausted, malformed request)
+      // was indistinguishable in the logs from "search genuinely found nothing," which made
+      // this exact failure mode impossible to diagnose remotely.
+      let bodyText = '';
+      try {
+        bodyText = await res.text();
+      } catch {
+        // best-effort
+      }
+      console.error(`[firecrawl] HTTP ${res.status} for query "${query}" - body: ${bodyText.slice(0, 1000)}`);
       return { success: false, results: [], creditsUsed: 0 };
     }
 
     const json: any = await res.json();
     if (!json.success) {
-      console.error(`[firecrawl] success:false for query "${query}"`);
+      console.error(`[firecrawl] success:false for query "${query}" - response: ${JSON.stringify(json).slice(0, 1000)}`);
       return { success: false, results: [], creditsUsed: 0 };
     }
 
