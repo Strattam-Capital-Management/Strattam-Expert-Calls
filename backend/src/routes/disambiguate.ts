@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { firecrawlSearch } from '../clients/firecrawl';
+import { googleCseSearch } from '../clients/googleCse';
 import { callClaude, extractJson } from '../clients/anthropic';
 import { DISAMBIGUATION_SYSTEM_PROMPT } from '../prompts/disambiguation';
 
@@ -18,14 +19,28 @@ disambiguateRouter.post('/company/disambiguate', async (req, res) => {
   }
 
   try {
-    const searchResult = await firecrawlSearch({ query: `${query} company official site`, limit: 10 });
+    // Run Firecrawl and Google CSE (if configured) in parallel and merge their snippets -
+    // relying on Firecrawl alone meant a smaller/newer company entirely absent from Firecrawl's
+    // index came back "no matches" even when a plain Google search would have found it. This is
+    // the same two-backend pattern used for candidate web search in peopleSearch.ts. No new
+    // failure mode: if GOOGLE_CSE_API_KEY/GOOGLE_CSE_CX aren't set, googleCseSearch no-ops and
+    // behavior is identical to before.
+    const [firecrawlResult, cseResult] = await Promise.all([
+      firecrawlSearch({ query: `${query} company official site`, limit: 10 }),
+      googleCseSearch(`${query} company official site`, { limit: 10 }),
+    ]);
 
-    if (!searchResult.success || searchResult.results.length === 0) {
+    const combinedResults = [
+      ...(firecrawlResult.success ? firecrawlResult.results : []),
+      ...(cseResult.success ? cseResult.results : []),
+    ];
+
+    if (combinedResults.length === 0) {
       res.json({ candidates: [] });
       return;
     }
 
-    const snippetText = searchResult.results
+    const snippetText = combinedResults
       .map((r) => `URL: ${r.url}\nTITLE: ${r.title ?? ''}\nSNIPPET: ${r.description ?? ''}`)
       .join('\n\n---\n\n')
       .slice(0, 12_000);
