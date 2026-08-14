@@ -86,11 +86,30 @@ export default function CompanyStep({
         </button>
       </div>
 
+      {/* A plain Google search, no API key or backend call involved - always available as the
+          fastest, zero-setup way to eyeball whether this is a real, findable company before
+          running the full (paid, multi-minute) pipeline against it. The automated candidate
+          search below is best-effort and can come up empty for smaller companies; this link
+          never can. */}
+      {companyName.trim() && (
+        <a
+          href={`https://www.google.com/search?q=${encodeURIComponent(companyName.trim())}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block text-xs text-blue-600 underline hover:text-blue-800"
+        >
+          Search Google for &quot;{companyName.trim()}&quot; ↗
+        </a>
+      )}
+
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       {hasSearched && !isLoading && candidates.length === 0 && !error && (
         <p className="mt-3 text-sm text-slate-500">
-          No matches found. That&apos;s fine — you can still proceed with the name as typed.
+          No automated matches found — that can happen for smaller or newer companies even when
+          the company is real. Use the Google link above to check yourself, then just proceed
+          with the name as typed (optionally add detail like industry or city in the field below
+          to help disambiguate a common name).
         </p>
       )}
 
