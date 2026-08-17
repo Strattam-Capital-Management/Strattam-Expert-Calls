@@ -46,13 +46,25 @@ export async function findOutsideTheBoxCandidates(
 
   for (const template of OUTSIDE_THE_BOX_QUERY_TEMPLATES) {
     const query = template.buildQuery(industry);
-    const searchResult = await firecrawlSearch({ query: `${query} ${companyName}${hintSuffix}`, limit: 8, costTracker });
+    // Same fix as peopleSearch.ts: scrape real page content for the top hits rather than
+    // relying on the bare search-result snippet, which very often doesn't contain the named
+    // individual even when the linked article does. limit drops 8 -> 5 to offset the added
+    // per-call cost of scraping.
+    const searchResult = await firecrawlSearch({
+      query: `${query} ${companyName}${hintSuffix}`,
+      limit: 5,
+      scrapeTopHits: true,
+      costTracker,
+    });
     if (!searchResult.success || searchResult.results.length === 0) continue;
 
     const snippetText = searchResult.results
-      .map((r) => `URL: ${r.url}\nTITLE: ${r.title ?? ''}\nSNIPPET: ${r.description ?? ''}`)
+      .map((r) => {
+        const body = r.markdown ? r.markdown.slice(0, 4000) : r.description ?? '';
+        return `URL: ${r.url}\nTITLE: ${r.title ?? ''}\nCONTENT: ${body}`;
+      })
       .join('\n\n---\n\n')
-      .slice(0, 20_000);
+      .slice(0, 24_000);
 
     const userMessage = `Target company: ${companyName}${hintSuffix}
 Industry: ${industry}
@@ -73,7 +85,7 @@ system prompt. Return JSON only.`;
         model,
         system: WEB_CANDIDATE_EXTRACTION_SYSTEM_PROMPT,
         userMessage,
-        maxTokens: 2500,
+        maxTokens: 4000,
         stepName: 'outside-the-box-extraction',
         costTracker,
       });

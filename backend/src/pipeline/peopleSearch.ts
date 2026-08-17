@@ -248,10 +248,20 @@ async function searchWebForArchetype(
   // of an archetype's queries and merging into one snippet corpus is what actually delivers the
   // "beyond just former employees" breadth - a single generic query per archetype couldn't
   // reach these categories at all.
+  //
+  // Firecrawl calls request full-page markdown for the top hits (scrapeTopHits), not just the
+  // bare search-result snippet - a named individual is very often mentioned in an article's
+  // body, not in its one-line meta-description, so extraction working from snippets alone was
+  // missing real people even when Firecrawl found exactly the right page. Cost trade-off: a
+  // scrape-included search costs more per call than a bare search, so `limit` drops from 10 to
+  // 5 to keep total cost from growing 2x - 5 real pages of content beats 10 thin snippets for
+  // this specific job. Google CSE has no scraping equivalent (by design - see clients/
+  // googleCse.ts's note on why it only ever reads Google's own snippet), so those queries are
+  // unaffected.
   const searchCalls = categoryQueries.map((cq) =>
     cq.useCse
       ? googleCseSearch(cq.query, { limit: 10, costTracker })
-      : firecrawlSearch({ query: cq.query, limit: 10, costTracker })
+      : firecrawlSearch({ query: cq.query, limit: 5, scrapeTopHits: true, costTracker })
   );
   const searchResponses = await Promise.all(searchCalls);
 
@@ -259,9 +269,16 @@ async function searchWebForArchetype(
   if (combinedResults.length === 0) return [];
 
   const snippetText = combinedResults
-    .map((r) => `URL: ${r.url}\nTITLE: ${r.title ?? ''}\nSNIPPET: ${r.description ?? ''}`)
+    .map((r) => {
+      // Prefer real page content (markdown) when Firecrawl scraped it; fall back to the bare
+      // snippet for Google CSE results, which never include page content by design. Each
+      // result's content is capped so one long page can't crowd out every other result before
+      // the overall 20k-char budget kicks in below.
+      const body = r.markdown ? r.markdown.slice(0, 4000) : r.description ?? '';
+      return `URL: ${r.url}\nTITLE: ${r.title ?? ''}\nCONTENT: ${body}`;
+    })
     .join('\n\n---\n\n')
-    .slice(0, 20_000);
+    .slice(0, 24_000);
 
   const userMessage = `Target company: ${companyName}${hintSuffix}
 Archetype being sourced: "${archetype.title}" (${archetype.whyValuable})
@@ -279,7 +296,10 @@ prompt. Return JSON only.`;
     model,
     system: WEB_CANDIDATE_EXTRACTION_SYSTEM_PROMPT,
     userMessage,
-    maxTokens: 2500,
+    // Was 2500 - bumped alongside the real-page-content change above, since feeding Claude
+    // actual article bodies instead of one-line snippets means it can legitimately find (and
+    // needs to write out) more people per call than before.
+    maxTokens: 4000,
     stepName: `web-extraction-${archetype.bucketId}`,
     costTracker,
   });

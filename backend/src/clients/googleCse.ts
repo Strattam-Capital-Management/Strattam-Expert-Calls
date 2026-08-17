@@ -5,6 +5,11 @@ export interface GoogleCseResult {
   title?: string;
   description?: string;
   url: string;
+  // Always undefined - Google CSE never returns page content, only its own indexed snippet
+  // (see the class-level comment above on why that's deliberate). This field exists purely so
+  // callers that merge Firecrawl and CSE results into one array (see peopleSearch.ts) can treat
+  // both shapes uniformly without a type-narrowing branch at every call site.
+  markdown?: undefined;
 }
 
 export interface GoogleCseResponse {
