@@ -18,6 +18,14 @@ HARD RULES - violating these makes your output unusable:
 4. Never fabricate a URL. Only use the source URL you were given for that snippet.
 5. If a snippet contains no clearly named individual with a stated company+title, skip it -
    do not force an extraction.
+6. "background" must be built ONLY from facts explicitly present in the source text - concrete
+   details like what they actually did in the role, a notable project/achievement/quote
+   attributed to them, how long they held the role, or why the source itself considered them
+   worth naming. Never pad this with generic filler ("has extensive experience in the
+   industry") that isn't actually grounded in something the source said - an empty string is
+   better than invented substance, since this field is what a downstream step uses to write
+   each candidate's specific reason for inclusion, and generic filler there is worse than
+   nothing.
 
 Return ONLY a JSON object (no markdown fences, no commentary) with exactly this shape:
 {
@@ -28,6 +36,7 @@ Return ONLY a JSON object (no markdown fences, no commentary) with exactly this 
       "title": string,
       "employmentStatus": "current" | "former" | "unknown",
       "role": string (one-line summary of why this person/role is relevant to the requested archetype/bucket),
+      "background": string (1-2 sentences of concrete, source-grounded detail per rule 6 above - "" if the source has nothing beyond name/title/company),
       "sourceUrl": string,
       "sourceLabel": string (short human-readable description of the source, e.g. "PRNewswire press release, 2021")
     }

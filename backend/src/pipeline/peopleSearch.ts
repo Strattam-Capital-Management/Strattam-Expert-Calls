@@ -410,6 +410,15 @@ prompt. Return JSON only.`;
       }
     }
 
+    // Prefer the real, source-grounded background detail extracted above over the generic
+    // "unconfirmed status" disclaimer - this is the field scoring.ts and questionMapping.ts
+    // both read to write each candidate's specific reason for inclusion, and previously it was
+    // undefined for the large majority of web-sourced candidates (only PDL results got a real
+    // tenureNote), which is why so many candidate write-ups had nothing concrete to draw on.
+    const background = typeof person.background === 'string' ? person.background.trim() : '';
+    const tenureNote =
+      background || (status === 'unknown' ? 'Current vs. former employment status unconfirmed from source text.' : undefined);
+
     drafts.push({
       id: newId(),
       name: person.name,
@@ -420,7 +429,7 @@ prompt. Return JSON only.`;
       relevantRole: person.role || archetype.title,
       relationshipToTarget,
       expertiseBucketId: archetype.bucketId,
-      tenureNote: status === 'unknown' ? 'Current vs. former employment status unconfirmed from source text.' : undefined,
+      tenureNote,
       linkedinUrl: undefined,
       biographySource: `${person.sourceLabel ?? 'Public web source'} (${person.sourceUrl ?? 'no URL captured'})`,
       outsideTheBox: false,

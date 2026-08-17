@@ -146,6 +146,13 @@ system prompt. Return JSON only.`;
         }
       }
 
+      // Same fix as peopleSearch.ts - prefer the real, source-grounded background detail over
+      // the generic disclaimer, since this is what scoring/questionMapping read to write a
+      // specific reason for inclusion rather than generic filler.
+      const background = typeof person.background === 'string' ? person.background.trim() : '';
+      const tenureNote =
+        background || (status === 'unknown' ? 'Current vs. former employment status unconfirmed from source text.' : undefined);
+
       drafts.push({
         id: newId(),
         name: person.name,
@@ -156,7 +163,7 @@ system prompt. Return JSON only.`;
         relevantRole: person.role || person.title,
         relationshipToTarget,
         expertiseBucketId: fallbackBucketId,
-        tenureNote: status === 'unknown' ? 'Current vs. former employment status unconfirmed from source text.' : undefined,
+        tenureNote,
         linkedinUrl: undefined,
         biographySource: `${person.sourceLabel ?? 'Public web source'} (${person.sourceUrl ?? 'no URL captured'})`,
         outsideTheBox: true,
