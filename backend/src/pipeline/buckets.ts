@@ -57,7 +57,13 @@ only, matching the schema in your system prompt.`;
     model,
     system: BUCKETS_ARCHETYPES_SYSTEM_PROMPT,
     userMessage,
-    maxTokens: 3000,
+    // Was 3000, sized for the original 6-8 buckets x 1-2 archetypes with no category field.
+    // Asking for 6-8 buckets x 2-3 archetypes (up to 24) each with title + whyValuable + a new
+    // category field is a meaningfully bigger JSON payload - 3000 was too tight and caused real
+    // truncation failures (this step correctly refuses to proceed on partial JSON rather than
+    // silently using a broken list, so it errored loudly instead of returning garbage - but the
+    // real fix is giving it enough room in the first place).
+    maxTokens: 6000,
     stepName: 'buckets-and-archetypes',
     costTracker,
   });
