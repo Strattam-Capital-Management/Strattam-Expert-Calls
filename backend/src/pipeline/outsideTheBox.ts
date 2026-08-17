@@ -48,11 +48,10 @@ export async function findOutsideTheBoxCandidates(
     const query = template.buildQuery(industry);
     // Same fix as peopleSearch.ts: scrape real page content for the top hits rather than
     // relying on the bare search-result snippet, which very often doesn't contain the named
-    // individual even when the linked article does. limit drops 8 -> 5 to offset the added
-    // per-call cost of scraping.
+    // individual even when the linked article does.
     const searchResult = await firecrawlSearch({
       query: `${query} ${companyName}${hintSuffix}`,
-      limit: 5,
+      limit: 8,
       scrapeTopHits: true,
       costTracker,
     });

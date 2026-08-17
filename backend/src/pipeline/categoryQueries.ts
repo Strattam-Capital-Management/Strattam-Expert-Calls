@@ -66,12 +66,26 @@ export function buildWebQueries(
           query: `"${archetypeTitle}" (certified partner OR reseller OR "systems integrator" OR "channel partner") ${companyName}${hintSuffix} named`,
           useCse: false,
         },
+        {
+          query: `${industry} (VAR OR reseller OR "implementation partner" OR "solutions partner") named partner directory`,
+          useCse: false,
+        },
       ];
 
+    // Industry-anchored categories (industry_analyst, academic, consultant, trade_association,
+    // conference_speaker) are deliberately given MULTIPLE distinct query angles each, not one -
+    // these are exactly the categories that don't depend on the target company's own public
+    // footprint at all, so a small/obscure target shouldn't mean a thin result here. A "huge
+    // industry, small company" target should still surface plenty of these candidates even when
+    // the target-employee/competitor/customer/supplier categories come up nearly empty.
     case 'industry_analyst':
       return [
         {
           query: `"${archetypeTitle}" ${industry} analyst named quote OR report OR "Magic Quadrant" OR Wave`,
+          useCse: false,
+        },
+        {
+          query: `${industry} market research analyst named report author OR co-author`,
           useCse: false,
         },
         {
@@ -87,6 +101,10 @@ export function buildWebQueries(
           useCse: false,
         },
         {
+          query: `${industry} academic research center director OR principal investigator named`,
+          useCse: false,
+        },
+        {
           query: `${industry} professor research named site:edu`,
           useCse: true,
         },
@@ -98,6 +116,14 @@ export function buildWebQueries(
           query: `independent consultant ${industry} advisory named expert "${archetypeTitle}"`,
           useCse: false,
         },
+        {
+          query: `${industry} consulting firm partner OR principal named boutique advisory`,
+          useCse: false,
+        },
+        {
+          query: `${industry} consultant named site:linkedin.com/in`,
+          useCse: true,
+        },
       ];
 
     case 'trade_association':
@@ -106,12 +132,20 @@ export function buildWebQueries(
           query: `trade association executive director OR board member ${industry} named`,
           useCse: false,
         },
+        {
+          query: `${industry} industry association president OR chairman named annual report`,
+          useCse: false,
+        },
       ];
 
     case 'conference_speaker':
       return [
         {
           query: `${industry} conference OR summit OR webinar speaker agenda named "${archetypeTitle}"`,
+          useCse: false,
+        },
+        {
+          query: `${industry} keynote OR panelist named 2024 OR 2025 conference agenda`,
           useCse: false,
         },
       ];

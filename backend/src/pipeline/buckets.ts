@@ -48,22 +48,24 @@ ${JSON.stringify(profile, null, 2)}
 Investment thesis (if provided): ${thesis ?? '(none provided)'}
 
 Propose 6-8 expertise buckets tailored specifically to this company's actual value drivers and
-industry, and for each bucket 2-3 specific candidate archetypes (job titles), each tagged with
-a category per your system prompt. Spread the archetypes across at least 5 different
-categories overall - reach well beyond just the target's own former employees. Return JSON
+industry, and for each bucket 3-4 specific candidate archetypes (job titles), each tagged with
+a category per your system prompt. Spread the archetypes across at least 6 different
+categories overall, weighting toward the company-agnostic categories (industry_analyst,
+academic, consultant, trade_association, conference_speaker) per your system prompt's guidance
+- reach well beyond just the target's own former employees, especially since a small or
+lower-profile target company still sits inside a large, well-covered industry. Return JSON
 only, matching the schema in your system prompt.`;
 
   const result = await callClaude({
     model,
     system: BUCKETS_ARCHETYPES_SYSTEM_PROMPT,
     userMessage,
-    // Was 3000, sized for the original 6-8 buckets x 1-2 archetypes with no category field.
-    // Asking for 6-8 buckets x 2-3 archetypes (up to 24) each with title + whyValuable + a new
-    // category field is a meaningfully bigger JSON payload - 3000 was too tight and caused real
-    // truncation failures (this step correctly refuses to proceed on partial JSON rather than
-    // silently using a broken list, so it errored loudly instead of returning garbage - but the
-    // real fix is giving it enough room in the first place).
-    maxTokens: 6000,
+    // Was 3000, then 6000. Now asking for 6-8 buckets x 3-4 archetypes (up to 32) each with
+    // title + whyValuable + category is a bigger JSON payload again - giving real headroom here
+    // rather than tuning it right up against the expected size, since a truncation here fails
+    // the whole run loudly (by design - see buckets.ts's normalizeCategory comment) rather than
+    // silently returning a partial list.
+    maxTokens: 8000,
     stepName: 'buckets-and-archetypes',
     costTracker,
   });

@@ -14,7 +14,7 @@ industry. Never fall back to a generic fixed list (e.g. do not always propose "S
 value and risk for this specific business. A SaaS company's buckets look very different from a
 specialty retailer's or an industrial manufacturer's.
 
-STEP 2 - For each bucket, propose 2-3 specific candidate archetypes: precise job titles/roles
+STEP 2 - For each bucket, propose 3-4 specific candidate archetypes: precise job titles/roles
 most likely to hold high-value information relevant to that bucket. Every archetype MUST be
 tagged with a "category" field from this fixed list, and each category means a specific pool of
 real people to search for:
@@ -46,11 +46,27 @@ real people to search for:
   close competitor's product on a public software-review site (e.g. G2, Capterra,
   TrustRadius) - hands-on users willing to share informed opinions publicly.
 
-Deliberately spread the archetype list across AT LEAST 5 different categories overall (not just
+Deliberately spread the archetype list across AT LEAST 6 different categories overall (not just
 "target_employee" and "competitor_employee") - the whole point of this exercise is reaching
 well beyond people who used to work at the company itself. Not every bucket needs one of every
 category, but the full archetype list across all buckets should look like a genuine expert-
 network breadth, not a former-employee list with a couple of afterthoughts tacked on.
+
+IMPORTANT - weight toward company-agnostic categories, especially for smaller/less-public
+targets: "target_employee", "competitor_employee", "customer", "channel_partner", and
+"supplier" archetypes can only ever be as findable as the target company's OWN public
+footprint - a small or newer company may have very little press, filings, or LinkedIn presence
+naming specific people at all, no matter how good the search is. "industry_analyst",
+"academic", "consultant", "trade_association", and "conference_speaker" do NOT have this
+limitation - a huge industry has plenty of named analysts, professors, consultants,
+association leaders, and conference speakers covering it regardless of how small or obscure any
+one company in that industry is. So: AT LEAST 40% of the total archetype list (ideally close to
+half) should come from these five company-agnostic categories, and propose MULTIPLE distinct
+archetypes within them where the industry supports it (e.g. both a "market-sizing industry
+analyst" and a "technology-focused industry analyst" as two separate archetypes, not one). The
+research team's actual goal is getting smart on the INDUSTRY and its dynamics fast, not just
+finding people who worked at this one specific company - the company-agnostic categories are
+usually the highest-volume, most reliable way to do that.
 
 Return ONLY a JSON object (no markdown fences, no commentary) with exactly this shape:
 {

@@ -261,7 +261,7 @@ async function searchWebForArchetype(
   const searchCalls = categoryQueries.map((cq) =>
     cq.useCse
       ? googleCseSearch(cq.query, { limit: 10, costTracker })
-      : firecrawlSearch({ query: cq.query, limit: 5, scrapeTopHits: true, costTracker })
+      : firecrawlSearch({ query: cq.query, limit: 8, scrapeTopHits: true, costTracker })
   );
   const searchResponses = await Promise.all(searchCalls);
 
